@@ -283,7 +283,7 @@ exports.setSchema = function (schema) {
     });
   }
 
-  function _find(type, idOrIds, foundObjects) {
+  function _find(type, idOrIds, constraints, foundObjects) {
     var typeInfo = getTypeInfo(type);
 
     var opts = {
@@ -309,9 +309,17 @@ exports.setSchema = function (schema) {
     }
 
     return db.allDocs(opts).then(function (pouchRes) {
-      var tasks = pouchRes.rows.filter(function (row) {
+      var rows = pouchRes.rows.filter(function (row) {
         return row.doc && !row.value.deleted;
-      }).map(function (row) {
+      });
+
+      if (constraints) {
+        for (var i = 0, len = constraints.length; i < len; i++) {
+          rows = rows.filter(constraints[i]);
+        }
+      }
+
+      var tasks = rows.map(function (row) {
         var obj = fromRawDoc(row.doc);
 
         foundObjects.get(type).set(JSON.stringify(obj.id), obj);
@@ -395,7 +403,8 @@ exports.setSchema = function (schema) {
 
       return utils.series(Object.keys(typesToIds).map(function (relatedType) {
         var relatedIds = uniq(typesToIds[relatedType]);
-        return function () {return _find(relatedType, relatedIds, foundObjects); };
+        // @todo : handle constraints
+        return function () {return _find(relatedType, relatedIds, null, foundObjects); };
       })).then(function () {
         var res = {};
         foundObjects.forEach(function (found, type) {
@@ -453,9 +462,9 @@ exports.setSchema = function (schema) {
     });
   }
 
-  function find(type, idOrIds) {
+  function find(type, idOrIds, constraints) {
     return Promise.resolve().then(function () {
-      return _find(type, idOrIds, new collections.Map());
+      return _find(type, idOrIds, constraints, new collections.Map());
     });
   }
 
@@ -777,6 +786,7 @@ function getThen(obj) {
     };
   }
 }
+
 },{"./resolveThenable":16,"./states":17,"./tryCatch":18}],10:[function(require,module,exports){
 module.exports = exports = require('./promise');
 
@@ -784,6 +794,7 @@ exports.resolve = require('./resolve');
 exports.reject = require('./reject');
 exports.all = require('./all');
 exports.race = require('./race');
+
 },{"./all":8,"./promise":11,"./race":13,"./reject":14,"./resolve":15}],11:[function(require,module,exports){
 'use strict';
 
@@ -818,10 +829,8 @@ Promise.prototype.then = function (onFulfilled, onRejected) {
     return this;
   }
   var promise = new Promise(INTERNAL);
-
-  
   if (this.state !== states.PENDING) {
-    var resolver = this.state === states.FULFILLED ? onFulfilled: onRejected;
+    var resolver = this.state === states.FULFILLED ? onFulfilled : onRejected;
     unwrap(promise, resolver, this.outcome);
   } else {
     this.queue.push(new QueueItem(promise, onFulfilled, onRejected));
@@ -859,6 +868,7 @@ QueueItem.prototype.callRejected = function (value) {
 QueueItem.prototype.otherCallRejected = function (value) {
   unwrap(this.promise, this.onRejected, value);
 };
+
 },{"./handlers":9,"./unwrap":19}],13:[function(require,module,exports){
 'use strict';
 var Promise = require('./promise');
@@ -878,10 +888,9 @@ function race(iterable) {
     return resolve([]);
   }
 
-  var resolved = 0;
   var i = -1;
   var promise = new Promise(INTERNAL);
-  
+
   while (++i < len) {
     resolver(iterable[i]);
   }
@@ -900,6 +909,7 @@ function race(iterable) {
     });
   }
 }
+
 },{"./INTERNAL":7,"./handlers":9,"./promise":11,"./reject":14,"./resolve":15}],14:[function(require,module,exports){
 'use strict';
 
@@ -986,6 +996,7 @@ exports.safely = safelyResolveThenable;
 exports.REJECTED = ['REJECTED'];
 exports.FULFILLED = ['FULFILLED'];
 exports.PENDING = ['PENDING'];
+
 },{}],18:[function(require,module,exports){
 'use strict';
 
